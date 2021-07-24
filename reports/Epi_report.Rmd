@@ -1,5 +1,5 @@
 ---
-title: "EpiEstim for NL"
+title: "EpiEstim for $R_e(t)$ in the  NL"
 author: "Jan van Rongen"
 date: "`r Sys.Date()`"
 output:
@@ -8,7 +8,7 @@ output:
     df_print: kable
     fig_caption: yes
     fig_height: 3
-    fig_width: 3.5
+    fig_width: 3.8
     highlight: kate
   html_document:
     df_print: paged
@@ -68,7 +68,7 @@ pretty_date(add = TRUE,  Epi_Rt_DOO[, 1:2])
 ```
 
 Are they exactly the same? No, but does it matter? I don't think so. The similarity (based on 1-RMSE) is approximately  
-`r 100*round(1-sqrt(mean(((Epi_Rt_DOO$R-Epi_Rt$R)[-(1:250)])^2)), 4)` percent on the recent half of the data.
+`r 100*round(1-sqrt(mean(((Epi_Rt_DOO$R-Epi_Rt$R)[-(1:250)])^2)), 4)` percent on the recent half of the data. But also note that the EpiEstim approach in this case is a simulation so numbers will differ a bit each time you run this file. 
 
 
 
