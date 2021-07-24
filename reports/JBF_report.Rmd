@@ -51,6 +51,7 @@ pretty_date(add = TRUE,  JBF_Rt[, 1:2])
 
 ## Comparing with RIVM
 
+
 Let's skip the details of how the RIVM changed the processing the last 1.5 years and let's just take a longer period where everything was more or less stable, Say from 2020-08-01 to 2021-06-25. For that period we compare the JBF-method with the RIVM one. The measure is `1-rmse`and the density distribution shows that the avg. difference is only 0.01 - smaller than any other error we can imagine in this process. 
 
 ```{r}
