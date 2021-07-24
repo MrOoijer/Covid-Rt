@@ -1,0 +1,68 @@
+---
+title: "JBF for NL"
+author: "Jan van Rongen"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    df_print: kable
+    fig_caption: yes
+    fig_height: 3
+    fig_width: 3.5
+    highlight: kate
+  html_document:
+    df_print: paged
+---
+\fontsize{12}{14}
+\setmainfont{DejaVu Sans}
+\selectfont
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+setwd("..")
+source("./start_last_data.R")
+# if you want to feresh to the most recent data, 
+# go outside this notebook
+source("./lib/pretty_date.R")
+source("./lib/make_cases_file.R")
+source("./lib/Rt_JBF.R")
+
+rev_rmse <- function(a, b) round(100*(1-sqrt(mean((a-b)^2))), 2)
+
+```
+
+## Explanation
+
+In an attempt to emulate the RIVM data we came upon this very simplistic function that nevertheless is quite succesful. JBF stands for "Jan Boeren Fluitje"- a Dutch expression for not really very well thought out strategies (although they sometimes work in a spectacular way).  
+
+```{r}
+
+cases_all<- make_all_cases()
+JBF_Rt <- Rt_JBF(cases_all, SMOOTH_DATA=10, ## or 11, same result
+                   PER_ANAL=4)
+
+pretty_date(start= as.Date("2020-11-01"),ylim=c(0,4), JBF_Rt[, -2], type="a", 
+            main="JBF Estimate on all data - per (usually) DOO")
+pretty_date(add = TRUE,  JBF_Rt[, 1:2])
+
+
+```
+
+## Comparing with RIVM
+
+Let's skip the details of how the RIVM changed the processing the last 1.5 years and let's just take a period where everythins was more or less stable, Say from 2020-08-01 to 2021-06-25. So for that period we compare the JBF method with the RIVM one. The measure is `1-rmse`and the density distribution shows that the avg error is only .01 - smaller than any other error we can imagine in this process. 
+
+```{r}
+rivm_ts <- make_cases(repro_rivm[, c(1,3)])
+JBF_ts <- make_cases( JBF_Rt[, 1:2])
+FROM= as.Date("2020-08-01"); TO= as.Date("2021-06-25")
+rivm_ts<- rivm_ts[FROM <= rivm_ts$date & rivm_ts$date < TO,]
+JBF_ts<- JBF_ts[FROM <= JBF_ts$date & JBF_ts$date < TO,]
+
+cat("\nResemblance: ", rev_rmse(JBF_ts$cases, rivm_ts$cases), "%\n")
+  
+pretty_density(abs(JBF_ts$cases- rivm_ts$cases), main="JBF-RIVM")    
+
+```
+

@@ -1,0 +1,82 @@
+---
+title: "EpiEstim for NL"
+author: "Jan van Rongen"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    df_print: kable
+    fig_caption: yes
+    fig_height: 3
+    fig_width: 3.5
+    highlight: kate
+  html_document:
+    df_print: paged
+---
+\fontsize{12}{14}
+\setmainfont{DejaVu Sans}
+\selectfont
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+setwd("..")
+source("./start_last_data.R")
+# if you want to feresh to the most recent data, 
+# go outside this notebook
+source("./lib/pretty_date.R")
+source("./lib/make_cases_file.R")
+source("./lib/Rt_Epi.R")
+
+```
+
+## Explanation
+
+We estimate the effective R in the Netherlands from RIVM data. This $R_e(t)$ is derived from the R module Epis Estim software. We use a version of the algorithm where the serial interval is not fixed but is given a "prior" class of distribution. This is a classical Bayesian way to approach the problem. 
+
+### DOO or not?
+
+As an addendum we compare all cases in the RIVM file with the cases that are strictly marked "DOO". There is no visual difference, but you can draw your own conclusions. 
+
+
+```{r include= FALSE}
+
+cases_all<- make_all_cases()
+Epi_Rt <- Rt_Epi(cases_all, SMOOTH_DATA=4, PER_ANAL=4)
+
+cases_DOO<- make_DOO_cases()
+Epi_Rt_DOO <- Rt_Epi(cases_DOO, SMOOTH_DATA=4, PER_ANAL=4)
+
+
+```
+
+```{r}
+
+
+pretty_date(start= as.Date("2020-11-01"),ylim=c(0,4), Epi_Rt[, -2], type="a", 
+            main="Epi Estimate on all data - per (usually) DOO")
+pretty_date(add = TRUE,  Epi_Rt[, 1:2])
+
+
+
+pretty_date(start= as.Date("2020-11-01"),ylim=c(0,4), Epi_Rt_DOO[, -2], type="a", 
+            main="Epi Estimate on strictly DOO data")
+pretty_date(add = TRUE,  Epi_Rt_DOO[, 1:2])
+
+
+
+```
+
+Are they exactly the same? No, but does it matter? I don't think so. The similarity (based on 1-RMSE) is approximately  
+`r 100*round(1-sqrt(mean(((Epi_Rt_DOO$R-Epi_Rt$R)[-(1:250)])^2)), 4)` percent on the recent half of the data.
+
+
+
+```{r}
+
+d<- Epi_Rt_DOO$R-Epi_Rt$R
+
+pretty_density(d, main= "DOO minus all types with 95% region")
+
+```
+
