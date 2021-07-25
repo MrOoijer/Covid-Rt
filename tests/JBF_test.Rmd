@@ -1,0 +1,163 @@
+---
+title: "JBF $R_e(t)$ for NL"
+author: "Jan van Rongen"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    df_print: kable
+    fig_caption: yes
+    fig_height: 3
+    fig_width: 5
+    highlight: kate
+  html_document:
+    df_print: paged
+---
+\fontsize{12}{14}
+\setmainfont{DejaVu Sans}
+\selectfont
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+setwd("..")
+source("./start_last_data.R")
+# if you want to feresh to the most recent data, 
+# go outside this notebook
+source("./lib/pretty_date.R")
+source("./lib/make_cases_file.R")
+
+ma <- function(cs, n = 7){
+  a<- stats::filter(cs$cases, rep(1 / n, n), sides = 2)
+  a[is.na(a)]<- 0
+  cs$cases<- a
+  cs
+  }
+rev_rmse <- function(a, b) round(100*(1-sqrt(mean((a-b)^2))), 2)
+
+```
+
+## Explanation
+
+JBF emulates the RIVM data quite well, Can it do better? And can we clean up the messy code and make a proper error estimate?
+
+```{r}
+# Rt with JBF.
+
+Rt_JBF <- function(data_set, 
+                   SMOOTH_Method= "Gaussian", 
+                   SMOOTH_DATA=11, 
+                   PER_ANAL=4, 
+                   SKIP= 5){
+  # smooth
+  cs<- data_set
+  if(SMOOTH_Method == "Gaussian"){
+    cs<- smoothed(data_set, SMOOTH_DATA)
+  } else if (SMOOTH_Method == "Golay") {
+    cs$cases <- my_golay(cs$cases, SMOOTH_DATA )
+  } else if(SMOOTH_Method == "Ma"){
+    cs <- ma(cs,  SMOOTH_DATA )
+  } else return(-1)
+
+  # emulate error margin 
+  N= 10000
+  
+  M<- matrix(0,nrow=nrow(cs), ncol=N)
+  for ( m in 1:nrow(cs)) 
+    M[m,] <- ifelse(cs[m, 2]> 0, rnorm(N, cs[m,2], 0.025*cs[m,2]), 0)
+  
+  M1<- head(M, -PER_ANAL)
+  M<- ifelse (M1 >0, tail(M, -PER_ANAL)/M1, 0)
+  
+  R<- rowMeans(M)
+  STD<- apply(M, 1, sd)
+  
+  result<- data.frame(date= head(cs$date, -4), 
+                      R=R, lo= R-1.96*STD, hi=R+1.96*STD)
+  return(head(result, -SKIP))
+
+}
+```
+
+## Load RIVM Data
+
+```{r echo = TRUE}
+rivm_ts <- make_cases(repro_rivm[, c(1,3)])
+FROM= as.Date("2020-08-01"); TO= as.Date("2021-06-25")
+rivm_ts<- rivm_ts[FROM <= rivm_ts$date & rivm_ts$date < TO,]
+cases_all<- make_all_cases()
+```
+
+
+## Try other methods
+
+As an example we use the Golay filter.
+
+```{r echo = TRUE}
+
+for (m in 8+(1:6))  {
+  JBF_Rt <- Rt_JBF(cases_all, SMOOTH_DATA=m, SMOOTH_Method="Golay")
+  JBF_ts <- make_cases( JBF_Rt[, 1:2])
+  JBF_ts<- JBF_ts[FROM <= JBF_ts$date & JBF_ts$date < TO,]
+  cat("\nResemblance: ", m, rev_rmse(JBF_ts$cases, rivm_ts$cases), "%")
+}
+
+```
+
+We have tried various other filters, but the Gaussian remains the closest with 98.51% and a span of 11, followed by the moving average centered with a span of 7 days and a score of 95.6%. Third and very close is the Golay filter with a span again of 11 days and a score of 95.5%. 
+
+## improving the error estimates
+
+The initial code of JBF was just a messy hack. It worked, Okay? But we can do better. 
+
+## Uncertainties after a kernel approximation
+
+However we smooth, we calculate a trend in a time series. We fit the best possible trend (in our class of models), but certain can we be about that trend? 
+
+With $t$ the date variable, we start with the model that $Y(t)= T(t) + E(t)$ wher $T$ is the trens, $E$ is the error (noise) and $Y$ are the daily observations. This is a familiar refression model and we will immediately discover that $E(t)$ is not so randomly distributed. 
+
+```{r echo = TRUE}
+TO= as.Date("2021-06-25")
+# change to mid july to see how absurd the Dutch situation was end june
+
+# data
+cases_all<- make_all_cases()
+trend_all<- smoothed(cases_all, 11)
+cases_ts<- cases_all[FROM <= cases_all$date & cases_all$date < TO, ]
+trend_ts<- trend_all[FROM <= trend_all$date & trend_all$date < TO, ]
+
+pretty_date(trend_ts, lwd=3, start=FROM, end=TO, main="Data and Trend")
+pretty_date(add=T, type="p", CEX=0.9, cases_ts, kleur=2)
+
+a<- trend_ts; a$cases<- a$cases- cases_ts$cases
+pretty_date(a, start=FROM, end=TO, main="The data clearly shows a weekly pattern of testing")
+
+a$cases<- ifelse(trend_ts$cases>0, a$cases/trend_ts$cases, 0)
+pretty_date(a, start=FROM, end=TO, main="Idem, as % of trend")
+
+mean(abs(a$cases))
+```
+Although this isn't very scientific, we can conclude that locally the trend might be deviated by 5%, so with a std of 2.5%. So when we want to know the uncertainties, we might sample from N(trend(t), 0.025*trend(t)) in a simulation.
+
+```{r}
+N= 5000
+
+M<- matrix(0,nrow=nrow(trend_all), ncol=N)
+for ( m in 1:nrow(trend_all)) 
+  M[m,] <- rnorm(N, trend_all[m,2], 0.025*trend_all[m,2])
+
+M1<- head(M, -4)
+M<- ifelse (M1 >0, tail(M, -4)/M1, 0)
+
+R<- rowMeans(M)
+STD<- apply(M, 1, sd)
+
+result<- data.frame(date= head(trend_all$date, -4), 
+                    R=R, lo= R-1.96*STD, hi=R+1.96*STD)
+
+pretty_date(start= as.Date("2020-11-01"),ylim=c(0,4), result[, -2], type="a", 
+            main="JBF Estimate on all data\nWith error estimate from simulation")
+pretty_date(add = TRUE,  result[, 1:2])
+
+```
+
