@@ -22,7 +22,7 @@ knitr::opts_chunk$set(echo = FALSE)
 
 setwd("..")
 source("./start_last_data.R")
-# if you want to feresh to the most recent data, 
+# if you want to refresh to the most recent data, 
 # go outside this notebook
 source("./lib/pretty_date.R")
 source("./lib/make_cases_file.R")
@@ -41,8 +41,27 @@ rev_rmse <- function(a, b) round(100*(1-sqrt(mean((a-b)^2))), 2)
 
 JBF emulates the RIVM data quite well, Can it do better? And can we clean up the messy code and make a proper error estimate?
 
+Well, yes and no. 
+
+### The JBF method
+
+It follows two steps: first smooth the input data. The smoother happens to create only positive values, so if X is the current data and Y is the data of the Serial interval, then X/Y is the $R_e(t)$. It happens to work best with a Gaussian smoother with a span of 11 and with a non stochastic serial interval of 4. 
+
+The error margin is calculated using some non-theoretical hocus pocus. 
+
+### JBF is theoretically flawed.
+
+But it is (unfortunately) a flawed method. After smoothing we have an estimate of a trend and that estimate has an error margin. We can assume that the error is more or less Gaussian, so we have a time series of normal distributions $N(\mu(t), \sigma(t))$ and $R_e(t-4) = N(\mu(t), \sigma(t)) / N(\mu(t-4), \sigma(t-4))$ for all relevant $t$. The $\mu(t)$ is estimated as the smoothed value at day $t$, and here comes the problem. We divide two random variables $X$ and $Y$, but the $E(X/Y) = E(X).E(1/Y)$ if we assume them independt, but $E(1/Y) \neq 1/E(Y)$ in general.
+
+Because JBF was such a quick hack I missed this point completely (even though I knew it very well as the central problem in a previous project). 
+
+### The solution
+
+To solve it we can use a Taylor expansion of (X/Y) around $\mu(Y)$, but it is easier to use a simulation. See at the end of this file.
+
 ```{r}
-# Rt with JBF.
+# Rt with JBF. The original function 
+# with a choice of smoothers added
 
 Rt_JBF <- function(data_set, 
                    SMOOTH_Method= "Gaussian", 
@@ -58,24 +77,33 @@ Rt_JBF <- function(data_set,
   } else if(SMOOTH_Method == "Ma"){
     cs <- ma(cs,  SMOOTH_DATA )
   } else return(-1)
+ 
+  # emulate error margin -- completely unfounded in theory
+  # and in fact it is also wrong
+  
+  cs2<- cs
+  cs2$cases <- 1.96*abs(cs2$cases - data_set$cases)
+  cs2<- smoothed(cs2, SMOOTH_DATA)
+  df3<- cbind(cs, lo= cs$cases- cs2$cases, hi= cs$cases+ cs2$cases)
+  
+  # Avg increas in PER_ANAL days - including margins
+  D= sqrt(2)
+  df4<- df3
+  df4[, 3] <- (df4[,2] + df4[,3])/D
+  df4[, 4] <- (df4[,2] + df4[,4])/D
+  #now the in/decrease
+  df5<- df4
+  df4<- head(df4, -PER_ANAL)
+  df5<- tail(df5, -PER_ANAL)
+  df4$cases<- df5$cases/df4$cases
+  tmp<- df4$lo
+  df4$lo<- df5$lo/df4$hi
+  df4$hi<- df5$hi/tmp
+  df4$date<- df4$date - 0
+  # do not yet show recent values bacause unreliable
+  df4<- head(df4, -SKIP)
 
-  # emulate error margin 
-  N= 10000
   
-  M<- matrix(0,nrow=nrow(cs), ncol=N)
-  for ( m in 1:nrow(cs)) 
-    M[m,] <- ifelse(cs[m, 2]> 0, rnorm(N, cs[m,2], 0.025*cs[m,2]), 0)
-  
-  M1<- head(M, -PER_ANAL)
-  M<- ifelse (M1 >0, tail(M, -PER_ANAL)/M1, 0)
-  
-  R<- rowMeans(M)
-  STD<- apply(M, 1, sd)
-  
-  result<- data.frame(date= head(cs$date, -4), 
-                      R=R, lo= R-1.96*STD, hi=R+1.96*STD)
-  return(head(result, -SKIP))
-
 }
 ```
 
@@ -89,32 +117,38 @@ cases_all<- make_all_cases()
 ```
 
 
-## Try other methods
+## Try other smoothing methods
 
-As an example we use the Golay filter.
+As an example we use a Golay filter.
 
-```{r echo = TRUE}
+```{r echo = TRUE, warning=FALSE, message= FALSE}
 
-for (m in 8+(1:6))  {
+for (m in 8:15)  {
   JBF_Rt <- Rt_JBF(cases_all, SMOOTH_DATA=m, SMOOTH_Method="Golay")
   JBF_ts <- make_cases( JBF_Rt[, 1:2])
   JBF_ts<- JBF_ts[FROM <= JBF_ts$date & JBF_ts$date < TO,]
-  cat("\nResemblance: ", m, rev_rmse(JBF_ts$cases, rivm_ts$cases), "%")
+  cat("\nResemblance:", m, rev_rmse(JBF_ts$cases, rivm_ts$cases), "%")
 }
 
 ```
 
-We have tried various other filters, but the Gaussian remains the closest with 98.51% and a span of 11, followed by the moving average centered with a span of 7 days and a score of 95.6%. Third and very close is the Golay filter with a span again of 11 days and a score of 95.5%. 
+We have tried various other filters, but the Gaussian remains the closest with 98.51% and a span of 11, followed by the moving average centered with a span of 7 days and a score of 97.49%. Third and very close is the Golay filter with a span again of 11 days and a score of 97.39%. 
+
+We have also tried to change the dates of DON and DPL records in the source data (as RIVM says it's doing), but that has almost no effect. 
 
 ## improving the error estimates
 
-The initial code of JBF was just a messy hack. It worked, Okay? But we can do better. 
+The initial code of JBF was just a messy hack. It worked, but does it mean anything? Lets find out some details 
 
-## Uncertainties after a kernel approximation
+### Uncertainties after a kernel approximation
 
-However we smooth, we calculate a trend in a time series. We fit the best possible trend (in our class of models), but certain can we be about that trend? 
+However we smooth, we calculate a trend in a time series. We fit the best possible trend (in our class of models), but how certain can we be about that trend? 
 
-With $t$ the date variable, we start with the model that $Y(t)= T(t) + E(t)$ wher $T$ is the trens, $E$ is the error (noise) and $Y$ are the daily observations. This is a familiar refression model and we will immediately discover that $E(t)$ is not so randomly distributed. 
+The first objection is that time series are always autocorrelated, and we know to correct the error term for that -- so I looked into it. But our smoothing threw most of it out. 
+
+But still, the error terms or $data-trend$ are not the white noise they are supposed to be. 
+
+With $t$ the date variable, we start with the model that $Y(t)= T(t) + E(t)$ wher $T$ is the trens, $E$ is the error (noise) and $Y$ are the daily observations. This is a familiar regression model and we will immediately discover that $E(t)$ is not so randomly distributed. 
 
 ```{r echo = TRUE}
 TO= as.Date("2021-06-25")
@@ -135,29 +169,60 @@ pretty_date(a, start=FROM, end=TO, main="The data clearly shows a weekly pattern
 a$cases<- ifelse(trend_ts$cases>0, a$cases/trend_ts$cases, 0)
 pretty_date(a, start=FROM, end=TO, main="Idem, as % of trend")
 
-mean(abs(a$cases))
+cat("\nStandard error as % of the mean:", mean(abs(a$cases)/1.96))
 ```
-Although this isn't very scientific, we can conclude that locally the trend might be deviated by 5%, so with a std of 2.5%. So when we want to know the uncertainties, we might sample from N(trend(t), 0.025*trend(t)) in a simulation.
 
-```{r}
-N= 5000
 
-M<- matrix(0,nrow=nrow(trend_all), ncol=N)
-for ( m in 1:nrow(trend_all)) 
-  M[m,] <- rnorm(N, trend_all[m,2], 0.025*trend_all[m,2])
+So we can conclude that locally the trend might be deviated by 5%, so with a std of 2.5%. So when we want to know the uncertainties, we might sample from N(trend(t), 0.0263*trend(t)) in a simulation.
 
-M1<- head(M, -4)
-M<- ifelse (M1 >0, tail(M, -4)/M1, 0)
+That is exactly what we do in the next piece. We also add prior bounds to the simulated $R_e(t)$, to remove real outliers.
 
-R<- rowMeans(M)
-STD<- apply(M, 1, sd)
+```{r echo=TRUE}
+Rt_JBF_2 <- function(data_set)
+  {
+  N= 7500
+  
+  LO<- 0.4
+  HI<- 10
+  
+  trend_all <- smoothed(data_set, 11)
+  M<- matrix(0,nrow=nrow(trend_all), ncol=N)
+  for ( m in 1:nrow(trend_all)) 
+    M[m,] <- rnorm(N, trend_all[m,2], 0.0263*trend_all[m,2])
+  
+  M1<- head(M, -4)
+  M<- ifelse (M1 >0, tail(M, -4)/M1, 0)
+  
+  R<-  apply(M, 1, function(x){
+    x<- x[x<HI & x > LO]
+    mean(x)
+  })
+  STD<- apply(M, 1, function(x){
+    x<- x[x<HI & x > LO]
+    sd(x)
+  })
+  
+  result<- data.frame(date= head(trend_all$date, -4), 
+                      R=R, lo= R-1.96*STD, hi=R+1.96*STD)
+  return(result)
+}
 
-result<- data.frame(date= head(trend_all$date, -4), 
-                    R=R, lo= R-1.96*STD, hi=R+1.96*STD)
-
-pretty_date(start= as.Date("2020-11-01"),ylim=c(0,4), result[, -2], type="a", 
+## look at it
+result<- Rt_JBF_2(cases_all)
+pretty_date(start= as.Date("2020-02-01"),ylim=c(0,4), result[, -2], type="a", 
             main="JBF Estimate on all data\nWith error estimate from simulation")
 pretty_date(add = TRUE,  result[, 1:2])
 
 ```
+
+## How good is it?
+
+Almost as good. Without the prior in the above routine it is 2 points lower. 
+
+```{r}
+JBF_ts <- make_cases( result[, 1:2])
+JBF_ts<- JBF_ts[FROM <= JBF_ts$date & JBF_ts$date < TO,]
+cat("\nResemblance:", rev_rmse(JBF_ts$cases, rivm_ts$cases), "%")
+```
+
 

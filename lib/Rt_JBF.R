@@ -1,7 +1,7 @@
 # Rt with JBF.
 
 Rt_JBF <- function(data_set, 
-                   SMOOTH_DATA=10, 
+                   SMOOTH_DATA=11, 
                    PER_ANAL=4, SKIP= 5){
   # smooth
   cs<- smoothed(data_set, SMOOTH_DATA)
