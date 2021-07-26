@@ -51,13 +51,13 @@ The error margin is calculated using some non-theoretical hocus pocus.
 
 ### JBF is theoretically flawed.
 
-But it is (unfortunately) a flawed method. After smoothing we have an estimate of a trend and that estimate has an error margin. We can assume that the error is more or less Gaussian, so we have a time series of normal distributions $N(\mu(t), \sigma(t))$ and $R_e(t-4) = N(\mu(t), \sigma(t)) / N(\mu(t-4), \sigma(t-4))$ for all relevant $t$. The $\mu(t)$ is estimated as the smoothed value at day $t$, and here comes the problem. We divide two random variables $X$ and $Y$, but the $E(X/Y) = E(X).E(1/Y)$ if we assume them independt, but $E(1/Y) \neq 1/E(Y)$ in general.
+But it is (unfortunately) a flawed method. After smoothing we have an estimate of a trend and that estimate has an error margin. We can assume that the error is more or less Gaussian, so we have a time series of normal distributions $N(\mu(t), \sigma(t))$ and $R_e(t-4) = N(\mu(t), \sigma(t)) / N(\mu(t-4), \sigma(t-4))$ for all relevant $t$. The $\mu(t)$ is estimated as the smoothed value at day $t$, and here comes the problem. We divide two random variables $X$ and $Y$, but the $E(X/Y) = E(X).E(1/Y)$ if we assume them independent, but $E(1/Y) \neq 1/E(Y)$ in general.
 
 Because JBF was such a quick hack I missed this point completely (even though I knew it very well as the central problem in a previous project). 
 
 ### The solution
 
-To solve it we can use a Taylor expansion of (X/Y) around $\mu(Y)$, but it is easier to use a simulation. See at the end of this file.
+To solve this problem we can use a Taylor expansion of (X/Y) around $\mu(Y)$, but it is easier to use a simulation. See later in this report.
 
 ```{r}
 # Rt with JBF. The original function 

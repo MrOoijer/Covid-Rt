@@ -36,6 +36,8 @@ rev_rmse <- function(a, b) round(100*(1-sqrt(mean((a-b)^2))), 2)
 
 In an attempt to emulate the RIVM data we came upon this very simplistic function that nevertheless is quite succesful. JBF stands for "Jan Boeren Fluitje"- a Dutch expression for not really very well thought out strategies (although they sometimes work in a spectacular way).  
 
+On 2021-07-25 I have rewritten the complete JBF algorithm and given it a more solid theoretical base. That version is now used here.
+
 ```{r}
 
 cases_all<- make_all_cases()
@@ -63,7 +65,7 @@ JBF_ts<- JBF_ts[FROM <= JBF_ts$date & JBF_ts$date < TO,]
 
 cat("\nResemblance: ", rev_rmse(JBF_ts$cases, rivm_ts$cases), "%\n")
   
-pretty_density(abs(JBF_ts$cases- rivm_ts$cases), main="|JBF-RIVM| distribution (plus the 95% values area")    
+pretty_density((JBF_ts$cases- rivm_ts$cases), main="(JBF-RIVM) distribution (plus the 95% values area")    
 
 ```
 
