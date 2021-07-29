@@ -2,10 +2,11 @@
 
 Rt_JBF <- function(data_set, 
                    SMOOTH_DATA=11, 
-                   PER_ANAL=4, SKIP= 5){
+                   PER_ANAL=4, SKIP= 5, 
+                   NEW= TRUE){
   
   ### call new one
-  return(Rt_JBF_2(data_set))
+  if (NEW) return(Rt_JBF_2(data_set))
   
   # smooth
   cs<- smoothed(data_set, SMOOTH_DATA)
